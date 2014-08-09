@@ -93,7 +93,6 @@ int main(int argc, const char *argv[]) {
         fprintf(stderr, "malloc colors failed\n");
         goto err4;
     }
-    //    bool *initial;
 
     int seed = time(NULL);
     srand(seed);
@@ -126,14 +125,7 @@ int main(int argc, const char *argv[]) {
         border[i] = false;
     }
 
-    int middle = w * h / 2 + w / 2;
-    img[middle] = colors[nextcol++];
-    touched[middle] = true;
-    int nls[9];
-    int nn = neighbors(middle, w, h, touched, false, nls);
-    for (int n = 0; n < nn; n++) {
-        border[nls[n]] = true;
-    }
+    border[w * h / 2 + w / 2] = true;
 
     /*
     struct pam inpam;
@@ -174,7 +166,7 @@ int main(int argc, const char *argv[]) {
                 bestscore = s;
             }
             else if (s == bestscore) {
-                if (rand() % 2) {
+                if (bestscore == -INFINITY || rand() % 2 == 0) {
                     bestplace = i;
                 }
             }
