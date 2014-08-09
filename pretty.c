@@ -5,11 +5,9 @@
 #include <time.h>
 #include <math.h>
 
-const unsigned int WIDTH = 128;
-const unsigned int HEIGHT = 128;
+const int WIDTH = 256;
+const int HEIGHT = 128;
 const unsigned char COLSKIP = 4;
-const bool SHUFFLE = true;
-unsigned int NUMCOLS;
 
 typedef struct color {
     unsigned char r;
@@ -17,23 +15,25 @@ typedef struct color {
     unsigned char b;
 } color;
 
-bool nvalid(int r, int c, bool *touched, bool seektouch) {
-    if (r < 0 || r >= HEIGHT || c < 0 || c >= WIDTH) {
+bool nvalid(int r, int c, int w, int h, bool *touched,
+            bool seektouch) {
+    if (r < 0 || r >= h || c < 0 || c >= w) {
         return false;
     }
-    return touched[r * WIDTH + c] == seektouch;
+    return touched[r * w + c] == seektouch;
 }
 
-int neighbors(int pos, bool *touched, bool seektouch, int nls[9]) {
+int neighbors(int pos, int w, int h, bool *touched, bool seektouch,
+              int nls[9]) {
     int i = 0;
-    int r = pos / WIDTH, c = pos % WIDTH;
+    int r = pos / w, c = pos % w;
     for (int ro = -1; ro <= 1; ro++) {
         for (int co = -1; co <= 1; co++) {
             if (!(ro || co)) {
                 continue;
             }
-            if (nvalid(r + ro, c + co, touched, seektouch)) {
-                nls[i++] = (r + ro) * WIDTH + c + co;
+            if (nvalid(r + ro, c + co, w, h, touched, seektouch)) {
+                nls[i++] = (r + ro) * w + c + co;
             }
         }
     }
@@ -47,9 +47,9 @@ float dist(color cola, color colb) {
     return sqrt(rdist * rdist + gdist * gdist + bdist * bdist);
 }
 
-float score(int i, color col, color *img, bool *touched) {
+float score(int i, int w, int h, color col, color *img, bool *touched) {
     int nls[9];
-    int nn = neighbors(i, touched, true, nls);
+    int nn = neighbors(i, w, h, touched, true, nls);
     float mindist = INFINITY;
     for (int n = 0; n < nn; n++) {
         float d = dist(col, img[nls[n]]);
@@ -61,33 +61,56 @@ float score(int i, color col, color *img, bool *touched) {
 }
 
 int main(int argc, const char *argv[]) {
-    color img[WIDTH * HEIGHT];
-    bool touched[WIDTH * HEIGHT];
-    bool border[WIDTH * HEIGHT];
-    //    bool initial[WIDTH * HEIGHT];
+    int ret = 0;
+
+    int w = WIDTH;
+    int h = HEIGHT;
+    int colskip = COLSKIP;
+    bool shuffle = true;
+    // TODO set parameters from command line
+    color *img = malloc(sizeof(color) * w * h);
+    if (img == NULL) {
+        ret = 1;
+        fprintf(stderr, "malloc img failed");
+        goto err1;
+    }
+    bool *touched = malloc(sizeof(bool) * w * h);
+    if (touched == NULL) {
+        ret = 2;
+        fprintf(stderr, "malloc touched failed");
+        goto err2;
+    }
+    bool *border = malloc(sizeof(bool) * w * h);
+    if (border == NULL) {
+        ret = 3;
+        fprintf(stderr, "malloc border failed");
+        goto err3;
+    }
+    const int NUMCOLS = (256 / colskip) * (256 / colskip) * (256 / colskip);
+    color *colors = malloc(NUMCOLS * sizeof(color));
+    if (colors == NULL) {
+        ret = 4;
+        fprintf(stderr, "malloc colors failed\n");
+        goto err4;
+    }
+    //    bool *initial;
 
     int seed = time(NULL);
     srand(seed);
     fprintf(stderr, "seed: %d\n", seed);
 
-    NUMCOLS = (256 / COLSKIP) * (256 / COLSKIP) * (256 / COLSKIP);
-    color *colors = malloc(NUMCOLS * sizeof(color));
-    if (colors == NULL) {
-        fprintf(stderr, "malloc colors failed\n");
-        return EXIT_FAILURE;
-    }
 
     int nextcol = 0;
-    for (int r = 0; r < 256; r += COLSKIP) {
-        for (int g = 0; g < 256; g += COLSKIP) {
-            for (int b = 0; b < 256; b += COLSKIP) {
+    for (int r = 0; r < 256; r += colskip) {
+        for (int g = 0; g < 256; g += colskip) {
+            for (int b = 0; b < 256; b += colskip) {
                 colors[nextcol++] = (color) {r, g, b};
             }
         }
     }
     nextcol = 0;
 
-    if (SHUFFLE) {
+    if (shuffle) {
         int j;
         color swap;
         for (int c = 0; c < NUMCOLS; c++) {
@@ -98,15 +121,16 @@ int main(int argc, const char *argv[]) {
         }
     }
 
-    for (int i = 0; i < WIDTH * HEIGHT; i++) {
+    for (int i = 0; i < w * h; i++) {
         touched[i] = false;
         border[i] = false;
     }
 
-    img[WIDTH * HEIGHT / 2 + WIDTH / 2] = colors[nextcol++];
-    touched[WIDTH * HEIGHT / 2 + WIDTH / 2] = true;
+    int middle = w * h / 2 + w / 2;
+    img[middle] = colors[nextcol++];
+    touched[middle] = true;
     int nls[9];
-    int nn = neighbors(WIDTH * HEIGHT / 2 + WIDTH / 2, touched, false, nls);
+    int nn = neighbors(middle, w, h, touched, false, nls);
     for (int n = 0; n < nn; n++) {
         border[nls[n]] = true;
     }
@@ -114,7 +138,7 @@ int main(int argc, const char *argv[]) {
     /*
     struct pam inpam;
     tuple *tuplerow;
-    pm_init(argv[0], 0);
+    pm_init("", 0);
     pnm_readpaminit(stdin, &inpam, PAM_STRUCT_SIZE(tuple_type));
     if (inpam.width != WIDTH) {
         fprintf(stderr, "width must be %d, not %d", WIDTH, inpam.width);
@@ -144,7 +168,7 @@ int main(int argc, const char *argv[]) {
             if (!border[i]) {
                 continue;
             }
-            float s = score(i, col, img, touched);
+            float s = score(i, w, h, col, img, touched);
             if (s > bestscore) {
                 bestplace = i;
                 bestscore = s;
@@ -162,7 +186,7 @@ int main(int argc, const char *argv[]) {
         touched[bestplace] = true;
         border[bestplace] = false;
         int nls[9];
-        int nn = neighbors(bestplace, touched, false, nls);
+        int nn = neighbors(bestplace, w, h, touched, false, nls);
         for (int n = 0; n < nn; n++) {
             border[nls[n]] = true;
         }
@@ -171,13 +195,11 @@ int main(int argc, const char *argv[]) {
         }
     }
 
-    free(colors);
-
     printf("P3\n");
-    printf("%u %u\n", WIDTH, HEIGHT);
+    printf("%d %d\n", w, h);
     printf("255\n");
     printf("# rand() seed: %d\n", seed);
-    for (int i = 0; i < WIDTH * HEIGHT; i++) {
+    for (int i = 0; i < w * h; i++) {
         if (touched[i]) {
             printf("%u %u %u\n", img[i].r, img[i].g, img[i].b);
         }
@@ -185,4 +207,14 @@ int main(int argc, const char *argv[]) {
             printf("0 0 0\n");
         }
     }
+
+    free(colors);
+ err4:
+    free(border);
+ err3:
+    free(touched);
+ err2:
+    free(img);
+ err1:
+    return ret;
 }
