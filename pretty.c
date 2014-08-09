@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <math.h>
+#include <getopt.h>
 
 const int WIDTH = 128;
 const int HEIGHT = 128;
@@ -80,14 +81,43 @@ bool setok(int level, int w, int h, bool *ok) {
     }
 }
 
-int main(int argc, const char *argv[]) {
+int main(int argc, char *argv[]) {
     int ret = 0;
 
     int w = WIDTH;
     int h = HEIGHT;
-    int colskip = COLSKIP;
+    unsigned char colskip = COLSKIP;
     bool shuffle = true;
-    // TODO set parameters from command line
+
+    int c;
+    while ((c = getopt(argc, argv, "w:h:c:s")) != -1) {
+        switch(c) {
+        case 'w':
+            if (sscanf(optarg, "%d", &w) != 1) {
+                fprintf(stderr, "invalid width %s", optarg);
+                return 255;
+            }
+            break;
+        case 'h':
+            if (sscanf(optarg, "%d", &h) != 1) {
+                fprintf(stderr, "invalid height %s", optarg);
+                return 255;
+            }
+            break;
+        case 'c':
+            if (sscanf(optarg, "%c", &colskip) != 1) {
+                fprintf(stderr, "invalid color skip factor %s", optarg);
+                return 255;
+            }
+            break;
+        case 's':
+            shuffle = false;
+            break;
+        case '?':
+            return 255;
+        }
+    }
+
     color *img = malloc(sizeof(color) * w * h);
     if (img == NULL) {
         ret = 1;
