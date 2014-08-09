@@ -5,7 +5,7 @@
 #include <time.h>
 #include <math.h>
 
-const int WIDTH = 256;
+const int WIDTH = 128;
 const int HEIGHT = 128;
 const unsigned char COLSKIP = 4;
 
@@ -57,7 +57,7 @@ float score(int i, int w, int h, color col, color *img, bool *touched) {
             mindist = d;
         }
     }
-    return -mindist;
+    return isfinite(mindist) ? -mindist : INFINITY;
 }
 
 int main(int argc, const char *argv[]) {
@@ -125,7 +125,8 @@ int main(int argc, const char *argv[]) {
         border[i] = false;
     }
 
-    border[w * h / 2 + w / 2] = true;
+    border[w * h / 2 + w / 3] = true;
+    border[w * h / 2 + 2 * w / 3] = true;
 
     /*
     struct pam inpam;
@@ -166,7 +167,7 @@ int main(int argc, const char *argv[]) {
                 bestscore = s;
             }
             else if (s == bestscore) {
-                if (bestscore == -INFINITY || rand() % 2 == 0) {
+                if (rand() % 2 == 0) {
                     bestplace = i;
                 }
             }
