@@ -60,6 +60,26 @@ float score(int i, int w, int h, color col, color *img, bool *touched) {
     return isfinite(mindist) ? -mindist : INFINITY;
 }
 
+bool setok(int level, int w, int h, bool *ok) {
+    switch (level) {
+    case 0:
+        for (int i = 0; i < w * h; i++) {
+            int r = i / w;
+            int c = i % w;
+            ok[i] = (r >= h / 3 && r < 2 * h / 3 &&
+                     c >= w / 3 && c < 2 * w / 3);
+        }
+        return true;
+    case 1:
+        for (int i = 0; i < w * h; i++) {
+            ok[i] = true;
+        }
+        return true;
+    default:
+        return false;
+    }
+}
+
 int main(int argc, const char *argv[]) {
     int ret = 0;
 
@@ -93,6 +113,12 @@ int main(int argc, const char *argv[]) {
         fprintf(stderr, "malloc colors failed\n");
         goto err4;
     }
+    bool *ok = malloc(sizeof(bool) * w * h);
+    if (ok == NULL) {
+        ret = 5;
+        fprintf(stderr, "malloc ok failed\n");
+        goto err5;
+    }
 
     int seed = time(NULL);
     srand(seed);
@@ -125,8 +151,7 @@ int main(int argc, const char *argv[]) {
         border[i] = false;
     }
 
-    border[w * h / 2 + w / 3] = true;
-    border[w * h / 2 + 2 * w / 3] = true;
+    border[w * h / 2 + w / 2] = true;
 
     /*
     struct pam inpam;
@@ -152,39 +177,43 @@ int main(int argc, const char *argv[]) {
     }
     */
 
-    int numplacements = min(NUMCOLS, WIDTH * HEIGHT);
-    while (nextcol < NUMCOLS) {
-        int bestplace = -1;
-        float bestscore = -INFINITY;
-        color col = colors[nextcol++];
-        for (int i = 0; i < WIDTH * HEIGHT; i++) {
-            if (!border[i]) {
-                continue;
-            }
-            float s = score(i, w, h, col, img, touched);
-            if (s > bestscore) {
-                bestplace = i;
-                bestscore = s;
-            }
-            else if (s == bestscore) {
-                if (rand() % 2 == 0) {
+    int level = 0;
+    while (setok(level++, w, h, ok)) {
+        int numplacements = min(NUMCOLS, w * h);
+        while (nextcol < NUMCOLS) {
+            int bestplace = -1;
+            float bestscore = -INFINITY;
+            color col = colors[nextcol++];
+            for (int i = 0; i < w * h; i++) {
+                if (!border[i] || !ok[i]) {
+                    continue;
+                }
+                float s = score(i, w, h, col, img, touched);
+                if (s > bestscore) {
                     bestplace = i;
+                    bestscore = s;
+                }
+                else if (s == bestscore) {
+                    if (rand() % 2 == 0) {
+                        bestplace = i;
+                    }
                 }
             }
-        }
-        if (bestplace < 0) {
-            break;
-        }
-        img[bestplace] = col;
-        touched[bestplace] = true;
-        border[bestplace] = false;
-        int nls[9];
-        int nn = neighbors(bestplace, w, h, touched, false, nls);
-        for (int n = 0; n < nn; n++) {
-            border[nls[n]] = true;
-        }
-        if (nextcol % 1024 == 0) {
-            fprintf(stderr, "placed color %d/%d\n", nextcol, numplacements);
+            if (bestplace < 0) {
+                break;
+            }
+            img[bestplace] = col;
+            touched[bestplace] = true;
+            border[bestplace] = false;
+            int nls[9];
+            int nn = neighbors(bestplace, w, h, touched, false, nls);
+            for (int n = 0; n < nn; n++) {
+                border[nls[n]] = true;
+            }
+            if (nextcol % 1024 == 0) {
+                fprintf(stderr, "placed color %d/%d\n", nextcol,
+                        numplacements);
+            }
         }
     }
 
@@ -201,6 +230,8 @@ int main(int argc, const char *argv[]) {
         }
     }
 
+    free(ok);
+ err5:
     free(colors);
  err4:
     free(border);
