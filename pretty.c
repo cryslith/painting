@@ -9,6 +9,7 @@
 const int WIDTH = 128;
 const int HEIGHT = 128;
 const unsigned char COLSKIP = 4;
+const char *const OPTIONS = "w:h:c:si:";
 
 typedef struct color {
     unsigned char r;
@@ -89,31 +90,35 @@ int main(int argc, char *argv[]) {
     unsigned char colskip = COLSKIP;
     bool shuffle = true;
 
-    int c;
-    while ((c = getopt(argc, argv, "w:h:c:s")) != -1) {
-        switch(c) {
+    int oc, icolskip;
+    while ((oc = getopt(argc, argv, OPTIONS)) != -1) {
+        switch(oc) {
         case 'w':
             if (sscanf(optarg, "%d", &w) != 1) {
-                fprintf(stderr, "invalid width %s", optarg);
+                fprintf(stderr, "invalid width %s\n", optarg);
                 return 255;
             }
             break;
         case 'h':
             if (sscanf(optarg, "%d", &h) != 1) {
-                fprintf(stderr, "invalid height %s", optarg);
+                fprintf(stderr, "invalid height %s\n", optarg);
                 return 255;
             }
             break;
         case 'c':
-            if (sscanf(optarg, "%c", &colskip) != 1) {
-                fprintf(stderr, "invalid color skip factor %s", optarg);
+            if (sscanf(optarg, "%d", &icolskip) != 1) {
+                fprintf(stderr, "invalid color skip factor %s\n", optarg);
                 return 255;
             }
+            colskip = icolskip;
             break;
         case 's':
             shuffle = false;
             break;
-        case '?':
+        case 'i':
+            // handle this later
+            break;
+        default:
             return 255;
         }
     }
@@ -121,19 +126,19 @@ int main(int argc, char *argv[]) {
     color *img = malloc(sizeof(color) * w * h);
     if (img == NULL) {
         ret = 1;
-        fprintf(stderr, "malloc img failed");
+        fprintf(stderr, "malloc img failed\n");
         goto err1;
     }
     bool *touched = malloc(sizeof(bool) * w * h);
     if (touched == NULL) {
         ret = 2;
-        fprintf(stderr, "malloc touched failed");
+        fprintf(stderr, "malloc touched failed\n");
         goto err2;
     }
     bool *border = malloc(sizeof(bool) * w * h);
     if (border == NULL) {
         ret = 3;
-        fprintf(stderr, "malloc border failed");
+        fprintf(stderr, "malloc border failed\n");
         goto err3;
     }
     const int NUMCOLS = (256 / colskip) * (256 / colskip) * (256 / colskip);
@@ -181,7 +186,22 @@ int main(int argc, char *argv[]) {
         border[i] = false;
     }
 
-    border[w * h / 2 + w / 2] = true;
+    optind = 1;
+    bool any_init = false;
+    while ((oc = getopt(argc, argv, OPTIONS)) != -1) {
+        if (oc == 'i') {
+            int r, c;
+            if (sscanf(optarg, "%d,%d", &r, &c) != 2) {
+                fprintf(stderr, "invalid initial coordinates %s\n", optarg);
+                return 255;
+            }
+            border[r * w + c] = true;
+            any_init = true;
+        }
+    }
+    if (!any_init) {
+        border[w * h / 2 + w / 2] = true;
+    }
 
     /*
     struct pam inpam;
