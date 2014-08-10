@@ -8,7 +8,6 @@
 
 const int WIDTH = 128;
 const int HEIGHT = 128;
-const unsigned char COLSKIP = 4;
 const char *const OPTIONS = "w:h:c:si:";
 
 typedef struct color {
@@ -16,6 +15,14 @@ typedef struct color {
     unsigned char g;
     unsigned char b;
 } color;
+
+int compute_colskip(int w, int h) {
+    int c = (int) floor(256 / pow(w * h, 1.0 / 3.0));
+    if (c < 1) {
+        return 1;
+    }
+    return c;
+}
 
 bool nvalid(int r, int c, int w, int h, bool *touched,
             bool seektouch) {
@@ -87,10 +94,11 @@ int main(int argc, char *argv[]) {
 
     int w = WIDTH;
     int h = HEIGHT;
-    unsigned char colskip = COLSKIP;
+    int colskip;
+    bool chose_colskip = false;
     bool shuffle = true;
 
-    int oc, icolskip;
+    int oc;
     while ((oc = getopt(argc, argv, OPTIONS)) != -1) {
         switch(oc) {
         case 'w':
@@ -106,11 +114,11 @@ int main(int argc, char *argv[]) {
             }
             break;
         case 'c':
-            if (sscanf(optarg, "%d", &icolskip) != 1) {
+            if (sscanf(optarg, "%d", &colskip) != 1) {
                 fprintf(stderr, "invalid color skip factor %s\n", optarg);
                 return 255;
             }
-            colskip = icolskip;
+            chose_colskip = true;
             break;
         case 's':
             shuffle = false;
@@ -121,6 +129,9 @@ int main(int argc, char *argv[]) {
         default:
             return 255;
         }
+    }
+    if (!chose_colskip) {
+        colskip = compute_colskip(w, h);
     }
 
     color *img = malloc(sizeof(color) * w * h);
@@ -141,7 +152,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "malloc border failed\n");
         goto err3;
     }
-    const int NUMCOLS = (256 / colskip) * (256 / colskip) * (256 / colskip);
+    const int NUMCOLS = (int) pow(ceil(256.0 / colskip), 3);
     color *colors = malloc(NUMCOLS * sizeof(color));
     if (colors == NULL) {
         ret = 4;
@@ -158,7 +169,6 @@ int main(int argc, char *argv[]) {
     int seed = time(NULL);
     srand(seed);
     fprintf(stderr, "seed: %d\n", seed);
-
 
     int nextcol = 0;
     for (int r = 0; r < 256; r += colskip) {
@@ -228,12 +238,12 @@ int main(int argc, char *argv[]) {
     */
 
     int level = 0;
+    int numplacements = min(NUMCOLS, w * h);
     while (setok(level++, w, h, ok)) {
-        int numplacements = min(NUMCOLS, w * h);
         while (nextcol < NUMCOLS) {
             int bestplace = -1;
             float bestscore = -INFINITY;
-            color col = colors[nextcol++];
+            color col = colors[nextcol];
             for (int i = 0; i < w * h; i++) {
                 if (!border[i] || !ok[i]) {
                     continue;
@@ -264,8 +274,10 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "placed color %d/%d\n", nextcol,
                         numplacements);
             }
+            nextcol++;
         }
     }
+    fprintf(stderr, "placed color %d/%d\n", numplacements, numplacements);
 
     printf("P3\n");
     printf("%d %d\n", w, h);
