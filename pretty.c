@@ -8,7 +8,7 @@
 
 const int WIDTH = 128;
 const int HEIGHT = 128;
-const char *const OPTIONS = "w:h:c:si:";
+const char *const OPTIONS = "w:h:c:si:t:";
 
 typedef struct color {
     unsigned char r;
@@ -24,8 +24,7 @@ int compute_colskip(int w, int h) {
     return c;
 }
 
-bool nvalid(int r, int c, int w, int h, bool *touched,
-            bool seektouch) {
+bool nvalid(int r, int c, int w, int h, bool *touched, bool seektouch) {
     if (r < 0 || r >= h || c < 0 || c >= w) {
         return false;
     }
@@ -69,24 +68,46 @@ float score(int i, int w, int h, color col, color *img, bool *touched) {
     return isfinite(mindist) ? -mindist : INFINITY;
 }
 
-bool setok(int level, int w, int h, bool *ok) {
-    switch (level) {
-    case 0:
-        for (int i = 0; i < w * h; i++) {
-            int r = i / w;
-            int c = i % w;
-            ok[i] = (r >= h / 3 && r < 2 * h / 3 &&
-                     c >= w / 3 && c < 2 * w / 3);
-        }
-        return true;
-    case 1:
-        for (int i = 0; i < w * h; i++) {
-            ok[i] = true;
-        }
-        return true;
-    default:
+bool setok_template(char *template_file, int w, int h, bool *ok) {
+    FILE *thandle = pm_openr(template_file);
+    if (thandle == NULL) {
+        fprintf(stderr, "failed to open file %s\n", template_file);
         return false;
     }
+    struct pam inpam;
+    tuple *tuplerow;
+    pm_init("", 0);
+    pnm_readpaminit(thandle, &inpam, sizeof(struct pam));
+    if (inpam.width != w) {
+        fprintf(stderr, "width must be %d, not %d", w, inpam.width);
+        pm_close(thandle);
+        return false;
+    }
+    if (inpam.height != h) {
+        fprintf(stderr, "height must be %d, not %d", h, inpam.height);
+        pm_close(thandle);
+        return false;
+    }
+    if (inpam.depth != 1) {
+        fprintf(stderr, "depth must be 1, not %d", inpam.depth);
+        pm_close(thandle);
+        return false;
+    }
+    tuplerow = pnm_allocpamrow(&inpam);
+    if (tuplerow == NULL) {
+        fprintf(stderr, "failed to allocate pam row\n");
+        pm_close(thandle);
+        return false;
+    }
+    for (int row = 0; row < inpam.height; row++) {
+        pnm_readpamrow(&inpam, tuplerow);
+        for (int column = 0; column < inpam.width; column++) {
+            ok[row * w + column] = (bool) tuplerow[column][0];
+        }
+    }
+    pnm_freepamrow(tuplerow);
+    pm_close(thandle);
+    return true;
 }
 
 int main(int argc, char *argv[]) {
@@ -97,6 +118,7 @@ int main(int argc, char *argv[]) {
     int colskip;
     bool chose_colskip = false;
     bool shuffle = true;
+    int numtemplates = 0;
 
     int oc;
     while ((oc = getopt(argc, argv, OPTIONS)) != -1) {
@@ -126,7 +148,12 @@ int main(int argc, char *argv[]) {
         case 'i':
             // handle this later
             break;
+        case 't':
+            numtemplates++;
+            // record template name later
+            break;
         default:
+            fprintf(stderr, "unknown option %c\n", oc);
             return 255;
         }
     }
@@ -165,6 +192,12 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "malloc ok failed\n");
         goto err5;
     }
+    char **template_files = malloc(sizeof(char *) * numtemplates);
+    if (template_files == NULL) {
+        ret = 6;
+        fprintf(stderr, "malloc template_files failed\n");
+        goto err6;
+    }
 
     int seed = time(NULL);
     srand(seed);
@@ -198,6 +231,7 @@ int main(int argc, char *argv[]) {
 
     optind = 1;
     bool any_init = false;
+    int level = 0;
     while ((oc = getopt(argc, argv, OPTIONS)) != -1) {
         if (oc == 'i') {
             int r, c;
@@ -208,38 +242,31 @@ int main(int argc, char *argv[]) {
             border[r * w + c] = true;
             any_init = true;
         }
+        else if (oc == 't') {
+            template_files[level++] = optarg;
+        }
     }
     if (!any_init) {
         border[w * h / 2 + w / 2] = true;
     }
 
-    /*
-    struct pam inpam;
-    tuple *tuplerow;
-    pm_init("", 0);
-    pnm_readpaminit(stdin, &inpam, PAM_STRUCT_SIZE(tuple_type));
-    if (inpam.width != WIDTH) {
-        fprintf(stderr, "width must be %d, not %d", WIDTH, inpam.width);
-    }
-    if (inpam.height != HEIGHT) {
-        fprintf(stderr, "height must be %d, not %d", HEIGHT, inpam.height);
-    }
-    if (inpam.depth != 1) {
-        fprintf(stderr, "depth must be 1, not %d", inpam.depth);
-        return 1;
-    }
-    tuplerow = pnm_allocpamrow(&inpam);
-    for (int row = 0; row < inpam.height; row++) {
-        pnm_readpamrow(&inpam, tuplerow);
-        for (int column = 0; column < inpam.width; column++) {
-            
-        }
-    }
-    */
-
-    int level = 0;
+    level = 0;
     int numplacements = min(NUMCOLS, w * h);
-    while (setok(level++, w, h, ok)) {
+    for (level = 0; level <= numtemplates; level++) {
+        if (level < numtemplates) {
+            fprintf(stderr, "setting template\n");
+            if (!setok_template(template_files[level], w, h, ok)) {
+                fprintf(stderr, "reading template failed\n");
+                ret = 255;
+                goto err;
+            }
+        }
+        else {
+            fprintf(stderr, "not setting template\n");
+            for (int i = 0; i < w * h; i++) {
+                ok[i] = true;
+            }
+        }
         while (nextcol < NUMCOLS) {
             int bestplace = -1;
             float bestscore = -INFINITY;
@@ -277,7 +304,8 @@ int main(int argc, char *argv[]) {
             nextcol++;
         }
     }
-    fprintf(stderr, "placed color %d/%d\n", numplacements, numplacements);
+    fprintf(stderr, "placed color %d/%d\n", nextcol, numplacements);
+    fprintf(stderr, "done placing colors\n");
 
     printf("P3\n");
     printf("%d %d\n", w, h);
@@ -292,6 +320,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
+ err:
+    free(template_files);
+ err6:
     free(ok);
  err5:
     free(colors);
