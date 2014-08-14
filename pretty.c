@@ -254,7 +254,6 @@ int main(int argc, char *argv[]) {
     int numplacements = min(NUMCOLS, w * h);
     for (level = 0; level <= numtemplates; level++) {
         if (level < numtemplates) {
-            fprintf(stderr, "setting template\n");
             if (!setok_template(template_files[level], w, h, ok)) {
                 fprintf(stderr, "reading template failed\n");
                 ret = 255;
@@ -262,7 +261,6 @@ int main(int argc, char *argv[]) {
             }
         }
         else {
-            fprintf(stderr, "not setting template\n");
             for (int i = 0; i < w * h; i++) {
                 ok[i] = true;
             }
